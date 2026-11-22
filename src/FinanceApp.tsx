@@ -76,8 +76,10 @@ const monthlyAuditSummary={newProjects:monthlyProjectAudit.filter((p:Row)=>Strin
   const stateCode=inv.place_of_supply_state_code||c.state_code||'';
   const date=(x:any)=>x?new Date(String(x)+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
   const total=round2(Number(inv.total_amount||0));
-  const paid=round2(Number(inv.paid_amount||0));
+  const linkedReceipts=(rows.payments||[]).filter((payment:Row)=>payment.invoice_id===inv.id&&payment.status==='received').reduce((sum:number,payment:Row)=>sum+Number(payment.amount||0),0);
+  const paid=round2(linkedReceipts>0?linkedReceipts:Number(inv.paid_amount||0));
   const balance=Math.max(0,round2(total-paid));
+  const gstTotal=round2(Number(inv.cgst_amount||0)+Number(inv.sgst_amount||0)+Number(inv.igst_amount||0));
   const drawHeader=()=>{
    doc.setFillColor(28,48,31);doc.rect(0,0,pageW,34,'F');
    doc.setFillColor(217,164,59);doc.rect(0,34,pageW,1.5,'F');
@@ -115,8 +117,9 @@ const monthlyAuditSummary={newProjects:monthlyProjectAudit.filter((p:Row)=>Strin
   autoTable(doc,{startY:tableY,margin:{left:margin,right:margin},tableWidth:contentW,head:[['#','DESCRIPTION OF GOODS / SERVICES','HSN / SAC','QTY','UNIT','RATE (INR)','TAXABLE (INR)','GST %']],body:items.map((x:any,i:number)=>[String(i+1),x.description||'—',String(x.hsn_sac||'—').replace(/^SAC[- ]?/i,''),fmt(x.quantity),x.unit||'Nos.',fmt(x.rate),fmt(x.taxable_value??Number(x.quantity||0)*Number(x.rate||0)),fmt(x.gst_rate??inv.gst_rate??18)+'%']),theme:'grid',styles:{font:'helvetica',fontSize:7,cellPadding:2.2,overflow:'linebreak',textColor:[48,61,50],lineColor:[224,231,222],lineWidth:.15},headStyles:{fillColor:[28,48,31],textColor:[255,255,255],fontStyle:'bold',fontSize:6.7},columnStyles:{0:{cellWidth:7,halign:'center'},1:{cellWidth:47},2:{cellWidth:19,halign:'center'},3:{cellWidth:11,halign:'right'},4:{cellWidth:13,halign:'center'},5:{cellWidth:24,halign:'right'},6:{cellWidth:29,halign:'right'},7:{cellWidth:18,halign:'right'}},didDrawPage:()=>{if(doc.getNumberOfPages()>1){doc.setFontSize(7);doc.setTextColor(120,130,120);doc.text('ATSFy Technologies  |  '+(inv.invoice_number||'Draft'),margin,10)}}});
   let y=(doc as any).lastAutoTable?.finalY||tableY+20;
   if(y>220){doc.addPage();y=20;}
-  const taxRows=[['Taxable value',amount(inv.taxable_value)],['CGST',amount(inv.cgst_amount)],['SGST',amount(inv.sgst_amount)],['IGST',amount(inv.igst_amount)],['INVOICE TOTAL',amount(total)],['COLLECTED AMOUNT',amount(paid)],['OUTSTANDING AMOUNT',amount(balance)]];
-  autoTable(doc,{startY:y+5,margin:{left:margin,right:margin},tableWidth:contentW,body:taxRows,theme:'plain',styles:{font:'helvetica',fontSize:8,cellPadding:2.4,textColor:[65,78,66]},columnStyles:{0:{cellWidth:contentW-55},1:{cellWidth:55,halign:'right'}},didParseCell:(data:any)=>{if(data.section==='body'&&(data.row.index===4||data.row.index===5||data.row.index===6)){data.cell.styles.fontStyle='bold';data.cell.styles.textColor=[28,48,31];if(data.row.index===6)data.cell.styles.fillColor=[238,243,235];if(data.row.index===5)data.cell.styles.textColor=[40,80,64];}}});
+  doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(28,48,31);doc.text('GST BREAKDOWN & PAYMENT SUMMARY',margin,y+4);
+  const taxRows=[['Taxable value',amount(inv.taxable_value)],['CGST ('+fmt(inv.cgst_rate||0)+'%)',amount(inv.cgst_amount)],['SGST ('+fmt(inv.sgst_rate||0)+'%)',amount(inv.sgst_amount)],['IGST ('+fmt(inv.igst_rate||0)+'%)',amount(inv.igst_amount)],['TOTAL GST',amount(gstTotal)],['INVOICE TOTAL',amount(total)],['COLLECTED AMOUNT',amount(paid)],['OUTSTANDING AMOUNT',amount(balance)]];
+  autoTable(doc,{startY:y+7,margin:{left:margin,right:margin},tableWidth:contentW,body:taxRows,theme:'grid',styles:{font:'helvetica',fontSize:8,cellPadding:2.6,textColor:[55,69,57],lineColor:[224,231,222],lineWidth:.15},columnStyles:{0:{cellWidth:contentW-55},1:{cellWidth:55,halign:'right'}},didParseCell:(data:any)=>{if(data.section==='body'&&(data.row.index===4||data.row.index===5||data.row.index===6||data.row.index===7)){data.cell.styles.fontStyle='bold';data.cell.styles.textColor=[28,48,31];if(data.row.index===5)data.cell.styles.fillColor=[238,243,235];if(data.row.index===6)data.cell.styles.fillColor=[247,249,246];if(data.row.index===7){data.cell.styles.fillColor=[238,243,235];data.cell.styles.lineWidth=.35;}}}});
   y=(doc as any).lastAutoTable?.finalY||y+45;
   if(y>247){doc.addPage();y=20;}
   doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(28,48,31);doc.text('AMOUNT IN WORDS',margin,y+8);
