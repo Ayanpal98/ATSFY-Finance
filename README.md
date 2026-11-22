@@ -11,6 +11,10 @@ Private internal finance workspace for ATSFY Technologies.
 - Local owner PIN/passphrase gate.
 - JSON backup export and restore.
 
+## Database migration status
+
+A SQL schema draft is present under `supabase/migrations`, but the current application does not connect to Supabase and the migration has **not been applied**. Do not apply it to a production database until the schema, GSTIN defaults, invoice-number sequence, ownership constraints across related records, and row-level security policies have been independently reviewed.
+
 ## Important storage and security limits
 
 This version stores data only in the browser profile and device where it is used. It does not sync between devices or browsers. Clearing browser site data, losing the device, or browser profile corruption can permanently remove records. Export backups regularly and keep them in a secure location.
