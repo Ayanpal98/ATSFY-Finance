@@ -65,7 +65,7 @@ export default function FinanceApp(){
    const under=(x:number):string=>x<20?one[x]:ten[Math.floor(x/10)]+(x%10?' '+one[x%10]:'');
    const group=(x:number)=>x<100?under(x):one[Math.floor(x/100)]+' Hundred'+(x%100?' '+under(x%100):'');
    let x=n;const parts:string[]=[];for(const [v,label] of [[10000000,'Crore'],[100000,'Lakh'],[1000,'Thousand'],[1,'']] as [number,string][]){const q=Math.floor(x/v);if(q){parts.push(group(q)+(label?' '+label:''));x%=v;}}
-   return parts.join(' ')+' Rupees Only';
+   const paise=Math.round((Math.abs(value)-Math.floor(Math.abs(value)))*100);return parts.join(' ')+' Rupees'+(paise?' and '+under(paise)+' Paise':'')+' Only';
   };
   const amount=(n:any)=>'INR '+fmt(n);
   const supplierName=settings?.legal_name||'ATSFy Technologies';
@@ -118,6 +118,7 @@ export default function FinanceApp(){
   doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(75,88,76);
   doc.text(doc.splitTextToSize(words(total),contentW),margin,y+14);
   y+=23;
+  if(y+42>278){doc.addPage();y=20;}
   const terms=String(inv.notes||'Goods/services once sold or delivered are non-refundable unless agreed in writing.');
   doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(28,48,31);doc.text('TERMS & NOTES',margin,y+5);
   doc.setFont('helvetica','normal');doc.setTextColor(85,96,85);doc.setFontSize(7);
