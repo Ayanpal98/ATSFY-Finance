@@ -96,7 +96,7 @@ export default function FinanceApp(){
   doc.setDrawColor(224,231,222);doc.line(margin,63,pageW-margin,63);
   doc.setFont('helvetica','normal');doc.setFontSize(8);
   const left=[['Invoice number',number],['Invoice date',date(inv.invoice_date)],['Due date',date(inv.due_date)],['Reverse charge',inv.reverse_charge?'Yes':'No']];
-  const right=[['Place of supply',inv.place_of_supply||c.state_name||'Tripura'],['State code',stateCode||'—'],['Supply type',String(inv.igst_amount||0)>0?'Inter-state':'Intra-state'],['Currency','INR']];
+  const right=[['Place of supply',inv.place_of_supply||c.state_name||'Tripura'],['State code',stateCode||'—'],['Supply type',Number(inv.igst_amount||0)>0?'Inter-state':'Intra-state'],['Currency','INR']];
   left.forEach((x,i)=>{const y=70+i*5.3;doc.setTextColor(112,124,113);doc.text(x[0]+':',margin,y);doc.setTextColor(35,53,38);doc.text(String(x[1]||'—'),margin+31,y)});
   right.forEach((x,i)=>{const y=70+i*5.3;doc.setTextColor(112,124,113);doc.text(x[0]+':',110,y);doc.setTextColor(35,53,38);doc.text(String(x[1]||'—'),142,y)});
   doc.setDrawColor(224,231,222);doc.line(margin,87,pageW-margin,87);
