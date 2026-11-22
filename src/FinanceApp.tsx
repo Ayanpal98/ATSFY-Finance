@@ -50,7 +50,85 @@ export default function FinanceApp(){
  async function backupData(){try{const data:any={format:'atsfy-finance-backup',version:1,exported_at:new Date().toISOString(),records:{}};for(const store of STORES)data.records[store]=await dbAll(store);const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='ATSFY-Finance-Backup-'+today()+'.json';a.click();URL.revokeObjectURL(url);setNotice('Backup exported. Store the file somewhere secure.')}catch(e:any){setNotice('Backup failed: '+e.message)}}
  async function restoreBackup(file?:File){if(!file)return;try{const data=JSON.parse(await file.text());if(data.format!=='atsfy-finance-backup'||data.version!==1||!data.records)throw new Error('This is not a supported ATSFY Finance backup.');const invalid=STORES.filter(store=>!Array.isArray(data.records[store])||data.records[store].some((row:Row)=>!row||typeof row!=='object'||typeof row.id!=='string'||!row.id));if(invalid.length)throw new Error('Backup validation failed for: '+invalid.join(', '));if(!window.confirm('Restore this backup? Current records in this browser will be replaced.'))return;await dbRestore(data.records);await load();setNotice('Backup restored successfully.')}catch(e:any){setNotice('Restore failed: '+e.message)}finally{const input=document.getElementById('restore-file') as HTMLInputElement|null;if(input)input.value=''}}
  function exportReport(){const doc=new jsPDF();doc.setFontSize(18);doc.text('ATSFy Technologies — Finance Summary',14,18);doc.setFontSize(10);doc.text('Generated '+today(),14,26);autoTable(doc,{startY:34,head:[['Metric','Amount']],body:[['Total invoiced',money(totals.invoiced)],['Payments received',money(totals.received)],['Invoice outstanding',money(totals.outstanding)],['Project outstanding',money(totals.projectOutstanding)],['Expenses',money(totals.expenses)],['GST on invoices',money(totals.tax)]]});doc.save('ATSFY-Finance-Summary.pdf')}
- function invoicePdf(inv:Row){const doc=new jsPDF();const c=rows.clients.find(x=>x.id===inv.client_id);const items=inv.items||[];const drawCopy=(label:string)=>{doc.setFillColor(28,48,31);doc.rect(0,0,210,27,'F');doc.setTextColor(255,255,255);doc.setFontSize(18);doc.text('ATSFy TECHNOLOGIES',14,12);doc.setFontSize(8);doc.text('AI Venture Studio | Agartala, Dhaleswar, Tripura',14,19);doc.text('GSTIN: '+(inv.supplier_gstin||settings?.gstin||'GSTIN pending verification'),140,13);doc.setTextColor(28,48,31);doc.setFontSize(15);doc.text('TAX INVOICE',14,39);doc.setFillColor(232,241,232);doc.roundedRect(139,32,57,10,2,2,'F');doc.setFontSize(8);doc.text(label,143,38.5);doc.setFontSize(10);doc.text('Invoice No.: '+inv.invoice_number,14,50);doc.text('Invoice Date: '+inv.invoice_date,14,57);doc.text('Place of Supply: '+(inv.place_of_supply||''),110,50);doc.text('State Code: '+(inv.place_of_supply_state_code||''),110,57);doc.text('Reverse charge: '+(inv.reverse_charge?'Yes':'No'),14,64);doc.text('DETAILS OF RECIPIENT (BILLED TO)',14,74);doc.text('Name: '+(c?.name||'Customer'),14,82);doc.text('Address: '+(c?.billing_address||''),14,89);doc.text('GSTIN: '+(c?.gstin||'Not provided'),14,96);autoTable(doc,{startY:104,head:[['S.No','Description of Goods / Services','HSN/SAC','Qty','Unit','Rate (Rs.)','Taxable Value (Rs.)']],body:items.map((x:any,i:number)=>[i+1,x.description,x.hsn_sac||'',x.quantity,x.unit||'Nos.',money(x.rate),money(x.taxable_value)]),theme:'grid',styles:{fontSize:8,cellPadding:2},headStyles:{fillColor:[231,239,232],textColor:[28,48,31]}});const y=(doc as any).lastAutoTable?.finalY||130;autoTable(doc,{startY:y+5,theme:'grid',styles:{fontSize:9,cellPadding:2},body:[['Total Taxable Value',money(inv.taxable_value)],['CGST',money(inv.cgst_amount)],['SGST',money(inv.sgst_amount)],['IGST',money(inv.igst_amount)],['INVOICE TOTAL (Rs.)',money(inv.total_amount)],['Payment received',money(inv.paid_amount)],['Balance due',money(Math.max(0,Number(inv.total_amount)-Number(inv.paid_amount||0)))]]});doc.setFontSize(8);doc.setTextColor(65,75,65);doc.text('Declaration: This invoice shows the actual price of the goods / services described.',14,267);doc.text('Goods / services once sold or delivered are non-refundable unless agreed in writing.',14,273);doc.text('Subject to Agartala (Tripura) jurisdiction. E. & O.E.',14,279);doc.text('For ATSFy Technologies — Authorised Signatory',124,288)};drawCopy('ORIGINAL FOR RECIPIENT');doc.addPage();drawCopy('DUPLICATE FOR SUPPLIER');doc.save((inv.invoice_number||'ATSFY-invoice')+'.pdf')}
+ function invoicePdf(inv:Row){
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  const pageW=210,margin=14,contentW=pageW-margin*2;
+  const c=rows.clients.find(x=>x.id===inv.client_id)||{};
+  const items=inv.items||[];
+  const issued=inv.status!=='draft'&&!!inv.invoice_number&&!String(inv.invoice_number).startsWith('DRAFT-');
+  const number=issued?inv.invoice_number:'DRAFT / NOT AN ISSUED TAX INVOICE';
+  const fmt=(n:any)=>new Intl.NumberFormat('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n||0));
+  const words=(value:number)=>{
+   const n=Math.round(Math.abs(value));if(!n)return 'Zero Rupees Only';
+   const one=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+   const ten=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+   const under=(x:number):string=>x<20?one[x]:ten[Math.floor(x/10)]+(x%10?' '+one[x%10]:'');
+   const group=(x:number)=>x<100?under(x):one[Math.floor(x/100)]+' Hundred'+(x%100?' '+under(x%100):'');
+   let x=n;const parts:string[]=[];for(const [v,label] of [[10000000,'Crore'],[100000,'Lakh'],[1000,'Thousand'],[1,'']] as [number,string][]){const q=Math.floor(x/v);if(q){parts.push(group(q)+(label?' '+label:''));x%=v;}}
+   return parts.join(' ')+' Rupees Only';
+  };
+  const amount=(n:any)=>'INR '+fmt(n);
+  const supplierName=settings?.legal_name||'ATSFy Technologies';
+  const supplierAddress=settings?.registered_address||'Agartala, Dhaleswar, Tripura';
+  const supplierGstin=inv.supplier_gstin||settings?.gstin||'';
+  const stateCode=inv.place_of_supply_state_code||c.state_code||'';
+  const date=(x:any)=>x?new Date(String(x)+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+  const total=round2(Number(inv.total_amount||0));
+  const paid=round2(Number(inv.paid_amount||0));
+  const balance=Math.max(0,round2(total-paid));
+  const drawHeader=()=>{
+   doc.setFillColor(28,48,31);doc.rect(0,0,pageW,34,'F');
+   doc.setFillColor(217,164,59);doc.rect(0,34,pageW,1.5,'F');
+   doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(17);doc.text(supplierName,margin,14);
+   doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text('AI Venture Studio  |  Agartala, Tripura',margin,21);
+   doc.setFontSize(7.5);doc.text('GSTIN: '+(supplierGstin||'Not configured'),pageW-margin,14,{align:'right'});
+   doc.text([settings?.phone,settings?.email,settings?.website].filter(Boolean).join('  |  '),pageW-margin,21,{align:'right'});
+   doc.setTextColor(28,48,31);
+  };
+  drawHeader();
+  doc.setFont('helvetica','bold');doc.setFontSize(15);doc.text(issued?'TAX INVOICE':'DRAFT INVOICE',margin,47);
+  doc.setFillColor(238,243,235);doc.roundedRect(143,40,contentW-129,10,2,2,'F');
+  doc.setFontSize(7.5);doc.setTextColor(40,80,64);doc.text(issued?'ORIGINAL FOR RECIPIENT':'NOT VALID FOR INPUT TAX CREDIT',147,46.5);
+  doc.setTextColor(28,48,31);
+  doc.setFont('helvetica','bold');doc.setFontSize(8);
+  doc.text('INVOICE DETAILS',margin,60);
+  doc.text('BILL TO',margin,91);
+  doc.setDrawColor(224,231,222);doc.line(margin,63,pageW-margin,63);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  const left=[['Invoice number',number],['Invoice date',date(inv.invoice_date)],['Due date',date(inv.due_date)],['Reverse charge',inv.reverse_charge?'Yes':'No']];
+  const right=[['Place of supply',inv.place_of_supply||c.state_name||'Tripura'],['State code',stateCode||'—'],['Supply type',String(inv.igst_amount||0)>0?'Inter-state':'Intra-state'],['Currency','INR']];
+  left.forEach((x,i)=>{const y=70+i*5.3;doc.setTextColor(112,124,113);doc.text(x[0]+':',margin,y);doc.setTextColor(35,53,38);doc.text(String(x[1]||'—'),margin+31,y)});
+  right.forEach((x,i)=>{const y=70+i*5.3;doc.setTextColor(112,124,113);doc.text(x[0]+':',110,y);doc.setTextColor(35,53,38);doc.text(String(x[1]||'—'),142,y)});
+  doc.setDrawColor(224,231,222);doc.line(margin,87,pageW-margin,87);
+  doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(28,48,31);doc.text(c.name||'Customer',margin,99);
+  doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(82,96,84);
+  const addr=doc.splitTextToSize(String(c.billing_address||'Billing address not provided'),contentW);
+  doc.text(addr.slice(0,2),margin,105);
+  const recipientMeta=[c.gstin?'GSTIN: '+c.gstin:'GSTIN: Unregistered / not provided',c.state_name?'State: '+c.state_name+(c.state_code?' ('+c.state_code+')':''):'State: Not provided',c.phone?'Phone: '+c.phone:'',c.email||''].filter(Boolean);
+  doc.text(recipientMeta.join('   |   '),margin,Math.min(118,106+Math.min(addr.length,2)*4));
+  const tableY=125;
+  autoTable(doc,{startY:tableY,margin:{left:margin,right:margin},tableWidth:contentW,head:[['#','DESCRIPTION OF GOODS / SERVICES','HSN / SAC','QTY','UNIT','RATE (INR)','TAXABLE (INR)','GST %']],body:items.map((x:any,i:number)=>[String(i+1),x.description||'—',String(x.hsn_sac||'—').replace(/^SAC[- ]?/i,''),fmt(x.quantity),x.unit||'Nos.',fmt(x.rate),fmt(x.taxable_value??Number(x.quantity||0)*Number(x.rate||0)),fmt(x.gst_rate??inv.gst_rate??18)+'%']),theme:'grid',styles:{font:'helvetica',fontSize:7,cellPadding:2.2,overflow:'linebreak',textColor:[48,61,50],lineColor:[224,231,222],lineWidth:.15},headStyles:{fillColor:[28,48,31],textColor:[255,255,255],fontStyle:'bold',fontSize:6.7},columnStyles:{0:{cellWidth:7,halign:'center'},1:{cellWidth:47},2:{cellWidth:19,halign:'center'},3:{cellWidth:11,halign:'right'},4:{cellWidth:13,halign:'center'},5:{cellWidth:24,halign:'right'},6:{cellWidth:29,halign:'right'},7:{cellWidth:18,halign:'right'}},didDrawPage:()=>{if(doc.getNumberOfPages()>1){doc.setFontSize(7);doc.setTextColor(120,130,120);doc.text('ATSFy Technologies  |  '+(inv.invoice_number||'Draft'),margin,10)}}});
+  let y=(doc as any).lastAutoTable?.finalY||tableY+20;
+  if(y>220){doc.addPage();y=20;}
+  const taxRows=[['Taxable value',amount(inv.taxable_value)],['CGST',amount(inv.cgst_amount)],['SGST',amount(inv.sgst_amount)],['IGST',amount(inv.igst_amount)],['Invoice total',amount(total)],['Less: payment received',amount(paid)],['BALANCE DUE',amount(balance)]];
+  autoTable(doc,{startY:y+5,margin:{left:margin,right:margin},tableWidth:contentW,body:taxRows,theme:'plain',styles:{font:'helvetica',fontSize:8,cellPadding:2.4,textColor:[65,78,66]},columnStyles:{0:{cellWidth:contentW-55},1:{cellWidth:55,halign:'right'}},didParseCell:(data:any)=>{if(data.section==='body'&&(data.row.index===4||data.row.index===6)){data.cell.styles.fontStyle='bold';data.cell.styles.textColor=[28,48,31];if(data.row.index===6)data.cell.styles.fillColor=[238,243,235];}}});
+  y=(doc as any).lastAutoTable?.finalY||y+45;
+  if(y>247){doc.addPage();y=20;}
+  doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(28,48,31);doc.text('AMOUNT IN WORDS',margin,y+8);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(75,88,76);
+  doc.text(doc.splitTextToSize(words(total),contentW),margin,y+14);
+  y+=23;
+  const terms=String(inv.notes||'Goods/services once sold or delivered are non-refundable unless agreed in writing.');
+  doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(28,48,31);doc.text('TERMS & NOTES',margin,y+5);
+  doc.setFont('helvetica','normal');doc.setTextColor(85,96,85);doc.setFontSize(7);
+  const termLines=doc.splitTextToSize(terms,contentW-48);doc.text(termLines.slice(0,3),margin,y+10);
+  doc.setDrawColor(217,164,59);doc.line(145,y+24,196,y+24);
+  doc.setFont('helvetica','bold');doc.setTextColor(28,48,31);doc.setFontSize(7);doc.text('For '+supplierName,196,y+29,{align:'right'});
+  doc.setFont('helvetica','normal');doc.setTextColor(105,115,105);doc.text('Authorised Signatory',196,y+34,{align:'right'});
+  const pages=doc.getNumberOfPages();
+  for(let p=1;p<=pages;p++){doc.setPage(p);doc.setDrawColor(225,231,223);doc.line(margin,286,pageW-margin,286);doc.setFontSize(6.5);doc.setTextColor(130,140,130);doc.text('Subject to Agartala, Tripura jurisdiction  |  E. & O.E.',margin,291);doc.text('Page '+p+' of '+pages,pageW-margin,291,{align:'right'});}
+  doc.save((inv.invoice_number||'ATSFY-invoice')+'.pdf');
+ }
  function receiptPdf(payment:Row){const doc=new jsPDF();const invoice=rows.invoices.find(x=>x.id===payment.invoice_id);const client=rows.clients.find(x=>x.id===invoice?.client_id);doc.setFillColor(28,48,31);doc.rect(0,0,210,27,'F');doc.setTextColor(255,255,255);doc.setFontSize(18);doc.text('ATSFy TECHNOLOGIES',14,12);doc.setFontSize(8);doc.text('AI Venture Studio | Agartala, Dhaleswar, Tripura',14,19);doc.text('GSTIN: '+(settings?.gstin||'GSTIN pending verification'),140,13);doc.setTextColor(28,48,31);doc.setFontSize(16);doc.text('PAYMENT RECEIPT',14,43);doc.setFontSize(10);doc.text('Receipt No.: ATSFY/RCPT/'+String(payment.id||'').slice(-8).toUpperCase(),14,56);doc.text('Date: '+payment.payment_date,14,64);doc.text('Received from: '+(client?.name||'Customer'),14,78);doc.text('Against invoice: '+(invoice?.invoice_number||'Not linked'),14,88);doc.text('Payment mode: '+payment.method,14,98);doc.text('Transaction reference: '+(payment.reference||'Not provided'),14,108);doc.setFillColor(237,243,235);doc.roundedRect(14,122,182,28,3,3,'F');doc.setFontSize(10);doc.text('AMOUNT RECEIVED',20,132);doc.setFontSize(18);doc.text(money(payment.amount),20,143);doc.setFontSize(9);doc.text('For ATSFy Technologies',130,190);doc.text('Authorised Signatory',130,198);doc.setFontSize(8);doc.text('This receipt acknowledges the payment recorded by ATSFy Technologies.',14,270);doc.save('ATSFY-Receipt-'+String(payment.id||'').slice(-8)+'.pdf')}
 
  return <div className="app-shell"><aside className={'sidebar '+(mobile?'open':'')}><div className="brand"><div className="brand-mark">A</div><div><b>ATSFY Finance</b><small>INTERNAL OFFICE</small></div><button className="icon-btn mobile-close" onClick={()=>setMobile(false)}><X size={18}/></button></div><div className="workspace-label">FINANCE WORKSPACE</div><nav>{nav.map(([id,label,Icon])=><button key={id} className={tab===id?'nav-item active':'nav-item'} onClick={()=>{setTab(id);setMobile(false);setSearch('')}}><Icon size={18}/><span>{label}</span>{id==='invoices'&&<em>{rows.invoices.length}</em>}</button>)}</nav><div className="sidebar-bottom"><div className="secure"><LockKeyhole size={15}/><span>Private owner workspace</span></div><button className="nav-item" onClick={signOut}><LogOut size={18}/>Sign out</button></div></aside><main className="main"><header className="topbar"><button className="icon-btn mobile-menu" onClick={()=>setMobile(true)}><Menu/></button><div><span className="eyebrow">ATSFY TECHNOLOGIES / FINANCE</span><h2>{title}</h2></div><div className="top-actions"><span className="live-dot">Secure session</span><button className="icon-btn" onClick={backupData} title="Export backup"><Download size={17}/></button><button className="icon-btn" onClick={()=>document.getElementById("restore-file")?.click()} title="Restore backup"><Receipt size={17}/></button><input id="restore-file" type="file" accept="application/json,.json" hidden onChange={e=>restoreBackup(e.target.files?.[0])}/><button className="icon-btn" onClick={load} title="Refresh"><RefreshCw size={17}/></button><div className="avatar">AP</div></div></header><section className="content">
